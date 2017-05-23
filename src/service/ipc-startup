@@ -1,0 +1,49 @@
+#!/bin/bash
+# Initialize ipcsystools for operation
+#  - detecting the UMTS/LTE modem
+#  - starting the initial connection
+echo -n "Startup IPC environment... "
+
+# Initialize modem (apn, sim, ...)
+. /usr/share/ipcsystools/ipclib.inc
+
+if which ipc-set-led  > /dev/null ; then
+	/usr/bin/ipc-set-led all-off
+fi
+
+# Erase error counters
+PING_FAULT_FILE=$IPC_STATUSFILE_DIR/connection_ping_fault
+echo 0 > $PING_FAULT_FILE
+CONNECTION_FAULT_FILE=$IPC_STATUSFILE_DIR/connection_fault
+echo 0 > $CONNECTION_FAULT_FILE
+
+# MCB2 specific - init MCB2 links and cronjobs (can't use cron.d)
+if [ -e /etc/ptxdist_version ] ; then
+	echo -n "(init MCB2) "
+	$IPC_SCRIPTS_DIR/ipc-initsystem.sh install
+fi
+
+function start_services
+{
+	# Startup WAN connection	
+	if [ ! -e /etc/ipcsystools.disable ] ; then
+		echo -n "(cron enabled) "
+		( startup_wan_connection; touch $IPC_STATUSFILE_DIR/ipcsystools.enabled ) &
+	else
+		echo -n "(cron disabled) "
+		rm -f $IPC_STATUSFILE_DIR/ipcsystools.enabled
+	fi
+}
+
+InitializeModem
+DetectModemCard
+if [ $? -eq 0 ]; then
+	start_services
+fi
+
+if which ipc-set-led > /dev/null ; then
+	ipc-set-led ready on
+fi
+
+echo "done."
+exit 0

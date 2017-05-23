@@ -1,0 +1,62 @@
+#!/bin/bash
+#-----------------------------------------------------------------------
+# This a simple systemd service loop instead of a cronjob
+#-----------------------------------------------------------------------
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+. /usr/share/ipcsystools/ipclib.inc
+
+DESC="ipc-service[$$]"
+
+IPC_SERVICE_PID_FILE=$IPC_STATUSFILE_DIR/ipc-service.pid
+IPC_SERVICE_STATUS=$IPC_STATUSFILE_DIR/ipc-service-status
+
+IPC_SERVICE_ENABLED=`getipcoption general.service_enabled`
+IPC_SERVICE_ENABLED=${IPC_SERVICE_ENABLED:=1}
+IPC_SERVICE_INTERVAL=`getipcoption general.service_interval`
+IPC_SERVICE_INTERVAL=${IPC_SERVICE_INTERVAL:=90}
+
+syslogger "debug" "Service interval set to $IPC_SERVICE_INTERVAL seconds"
+
+running=true
+forcedrun=false
+trap "running=false; syslogger 'debug' 'Got HUP signal'" SIGHUP
+trap "syslogger 'info' 'Catched SIGUSR1 - do nothing'" SIGUSR1
+trap "forcedrun=true; syslogger 'info' 'Catched SIGUSR2 - Forced run'" SIGUSR2
+
+#-- Start of script ----------------------------------------------------
+
+if [ "$IPC_SERVICE_ENABLED" = "1" ]; then
+	obtainlock $IPC_SERVICE_PID_FILE
+	syslogger "debug" "Started ipc service"
+
+	cd $IPC_SCRIPTS_DIR
+	echo -n "`date +%s`" > $IPC_SERVICE_STATUS
+
+	syslogger "info" "Starting ipc-service framework"
+	ipc-startup
+
+	syslogger "info" "Entering ipc-service service loop"
+	while $running; do
+		let tdiff=`date +%s`-`cat $IPC_SERVICE_STATUS`
+		let tdiff=$IPC_SERVICE_INTERVAL-$tdiff
+		if ! $forcedrun && [ $tdiff -gt 2 ]; then
+			sleep 2
+		else
+			date +%s > $IPC_SERVICE_STATUS
+			syslogger "debug" "Executing ipc service loop"
+			$IPC_SCRIPTS_DIR/ipc-cronjobs.sh
+			forcedrun=false
+		fi
+	done
+
+	syslogger "info" "Got signal and terminating service"
+	ipc-shutdown
+
+	syslogger "debug" "Finished shutdown of ipc service"
+	releaselock
+else
+    syslogger "debug" "Systemd ipc-service disabled"
+fi
+
+#-- End of script ------------------------------------------------------
+

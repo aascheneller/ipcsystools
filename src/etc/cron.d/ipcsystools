@@ -1,0 +1,3 @@
+# Installed by ipcsystools
+
+#OBSOLETE  */2 * * * * root /usr/share/ipcsystools/ipc-cronjobs.sh
